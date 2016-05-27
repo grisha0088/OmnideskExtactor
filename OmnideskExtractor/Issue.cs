@@ -22,8 +22,8 @@ namespace Extractor
         public string recipient { get; set; }
         public bool deleted { get; set; }
         public bool spam { get; set; }
-        public DateTime created_at { get; set; }
-        public DateTime updated_at { get; set; }
+        public DateTime? created_at { get; set; }
+        public DateTime? updated_at { get; set; }
         public bool? isEstimated { get; set; }   //оценить ответ (да/нет)
         public string version { get; set; } //версия приложения
         public string type { get; set; } //тип обращения

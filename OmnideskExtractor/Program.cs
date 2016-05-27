@@ -101,7 +101,7 @@ namespace Extractor
                     {
                         Date = DateTime.Now,
                         MessageTipe = "fatal",
-                        Operation = "StartService",
+                        Operation = "StartService",  
                         Exception = ex.GetType() + ": " + ex.Message
                     });
                 }
@@ -145,9 +145,7 @@ namespace Extractor
             {
                 try
                 {
-                    ProcessLabels(GetLabels()); //получил и обработал метки
-                    ProcessStaff(GetStaff()); //получил и обработал персонал
-                    ProcessGroups(GetGroups()); //получил и обработал группы
+
                     ProcessCases(GetCases()); //получил и обработал заявки
                     using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
                     {
@@ -159,38 +157,38 @@ namespace Extractor
                         });
                     }
                     Thread.Sleep(1800000);  //синхронизация будет проходить раз в 30 минут
-                }
+            }
                 catch (Exception e)
+            {
+                Thread.Sleep(300000);
+                using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
                 {
-                    Thread.Sleep(300000);
-                    using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
+                    repository.Create(new Log()
                     {
-                        repository.Create(new Log()
-                        {
-                            MessageTipe = "error",
-                            Date = DateTime.Now,
-                            Exception = e.Message,
-                            AddInfo = "InnerException: " + e.InnerException.Message + System.Environment.NewLine 
-                            + "StackTrace: " + e.StackTrace
-                        });
-                    }
+                        MessageTipe = "error",
+                        Date = DateTime.Now,
+                        Exception = e.Message,
+                        AddInfo = "InnerException: " + e.InnerException.Message + System.Environment.NewLine
+                        + "StackTrace: " + e.StackTrace
+                    });
                 }
             }
+        }
         }
 
         void ProcessLabels(List<Label> labels)
         {
             using (var repository = new Repository<DbContext>()) 
             {
-                foreach (Label l in labels)  
+                foreach (Label label in labels)  
                 {
-                    var labelFromDB = repository.Get<Lable>(ls => ls.label_id == l.label_id);
+                    var labelFromDB = repository.Get<Lable>(l => l.label_id == label.label_id);
                     if (labelFromDB == null)
                     {
                         repository.Create(new Lable()
                         {
-                            label_id = l.label_id,
-                            label_title = l.label_title
+                            label_id = label.label_id,
+                            label_title = label.label_title
                         });
                     }
                 }
@@ -307,31 +305,44 @@ namespace Extractor
         {
             using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
             {
-                int ii = 0;
                 foreach (Case c in cases)
                 {
-                    ii++;
                     var lbls = new List<Lable>(); //далаем метки тикета как объект
                     foreach (var l in c.labels)
                     {
                         var label = repository.Get<Lable>(lbl => lbl.label_id == l);
-                        if (label == null) return; //если в справочнике нет такого значения - выходим из метода
+                        if (label == null)
+                        {
+                            ProcessLabels(GetLabels());
+                            label = repository.Get<Lable>(lbl => lbl.label_id == l);
+                            if (label == null) throw new System.ApplicationException("Issue linked with label that not exist");
+                        }
                         lbls.Add(repository.Get<Lable>(lbl => lbl.label_id == l));
                     }
-                    var assignee = repository.Get<Assignee>(a => a.assignee_id == c.staff_id);
-                    if (assignee == null) return;
+                    var assignee = repository.Get<Assignee>(a => a.assignee_id == c.staff_id); //делаем исполнителя объектом
+                        if (assignee == null)
+                        {
+                            ProcessStaff(GetStaff());
+                            assignee = repository.Get<Assignee>(a => a.assignee_id == c.staff_id);
+                            if (assignee == null) throw new System.ApplicationException("Issue linked with assignee that not exist");
+                        }
 
-                    var group = repository.Get<IssueGroup>(g => g.group_id == c.group_id);
-                    if (group == null) return;
+                    var group = repository.Get<IssueGroup>(g => g.group_id == c.group_id); //делаем группу объектом
+                    if (group == null)
+                    {
+                        ProcessGroups(GetGroups());
+                        group = repository.Get<IssueGroup>(g => g.group_id == c.group_id);
+                        if (group == null) throw new System.ApplicationException("Issue linked with group that not exist");
+                    }
 
-                    var priority = repository.Get<Priority>(p => p.name == c.priority);
+                    var priority = repository.Get<Priority>(p => p.name == c.priority); //делаем приоритет объектом
                     if (priority == null)
                     {
                         repository.Create(new Priority() {name = c.priority});
                         priority = repository.Get<Priority>(p => p.name == c.priority);
                     }
 
-                    var status = repository.Get<Status>(s => s.name == c.status);
+                    var status = repository.Get<Status>(s => s.name == c.status); //делаем статус объектом
                     if (status == null)
                     {
                         repository.Create(new Status() {name = c.status});
@@ -351,8 +362,8 @@ namespace Extractor
                         project = c.custom_fields.cf_381;
                     }
 
-                    var ticketFromDB = repository.Get<Issue>(i => i.case_id == c.case_id);
-                    if (ticketFromDB == null)
+                    var ticketFromDB = repository.Get<Issue>(i => i.case_id == c.case_id); //читаем тикет из БД
+                    if (ticketFromDB == null) //если его нет, создаём тикет
                     {
                         repository.Create(new Issue()
                         {
@@ -376,11 +387,8 @@ namespace Extractor
                             Label = lbls
                         });
                     }
-                    else
+                    else  //если есть, обновляем
                     {
-                        if (ticketFromDB.updated_at >= c.updated_at) return;
-                        else
-                        {
                             ticketFromDB.case_id = c.case_id;
                             ticketFromDB.case_number = c.case_number;
                             ticketFromDB.subject = c.subject;
@@ -400,18 +408,17 @@ namespace Extractor
                             ticketFromDB.project = project;
                             ticketFromDB.Label = lbls;
                             repository.Update();
-                        }
                     }
                 }
             }
         }
         List<Case> GetCases()
-       {
+        {
             using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
             {
                 // вычитываю дату изменения последнего тикета из БД
                 var lastProcessedCase = repository.GetList<Issue>().OrderByDescending(p => p.updated_at).FirstOrDefault();
-                var lastProcessedTime = lastProcessedCase != null ? lastProcessedCase.updated_at : new DateTime(1900, 1, 1);
+                var lastProcessedTime = lastProcessedCase != null ? lastProcessedCase.updated_at : new DateTime(1900, 1, 1); //если тикетов в БД нет, то начало века
 
                 var result = new List<Case>(); 
                 int casePage = 0;
@@ -419,11 +426,9 @@ namespace Extractor
                 {
                     var casesFromCurrentPage = OmnideskClient.GetCases(++casePage, 100); //получаю по 100 заявки, начиная с 1 страницы
                     Thread.Sleep(int.Parse(intervalParam.Value)); //пауза, чтобы не заспамить API
-                    
                     if(casesFromCurrentPage == null) break; //если null, значит прочитали всё
 
                     result.AddRange(casesFromCurrentPage); //добавляю к результату полученные заявки
-                    //if (casePage > 10) break; //для теста
                     if (casesFromCurrentPage.Count < 100) break;  //если получили меньше 100 заявок - значит прочитали все
                     if (casesFromCurrentPage.Last().updated_at < lastProcessedTime) break; //проверяем, нет ли в БД заявок свежее, чем мы получили
                 }
