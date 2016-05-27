@@ -145,7 +145,6 @@ namespace Extractor
             {
                 try
                 {
-
                     ProcessCases(GetCases()); //получил и обработал заявки
                     using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
                     {
@@ -156,24 +155,25 @@ namespace Extractor
                             AddInfo = "Синхронизация прошла успешно"
                         });
                     }
-                    Thread.Sleep(1800000);  //синхронизация будет проходить раз в 30 минут
-            }
+                    Thread.Sleep(1800000); //синхронизация будет проходить раз в 30 минут
+                }
                 catch (Exception e)
-            {
-                Thread.Sleep(300000);
-                using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
                 {
-                    repository.Create(new Log()
+                    Thread.Sleep(300000);
+                    using (var repository = new Repository<DbContext>()) //создаю репозиторий для работы с БД
                     {
-                        MessageTipe = "error",
-                        Date = DateTime.Now,
-                        Exception = e.Message,
-                        AddInfo = "InnerException: " + e.InnerException.Message + System.Environment.NewLine
-                        + "StackTrace: " + e.StackTrace
-                    });
+                        repository.Create(new Log()
+                        {
+                            MessageTipe = "error",
+                            Date = DateTime.Now,
+                            Operation = "Получение и обработка обращений",
+                            Exception = e.Message,
+                            AddInfo = "InnerException: " + e.InnerException.Message + System.Environment.NewLine
+                                      + "StackTrace: " + e.StackTrace
+                        });
+                    }
                 }
             }
-        }
         }
 
         void ProcessLabels(List<Label> labels)
